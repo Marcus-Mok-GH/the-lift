@@ -7,6 +7,8 @@ An AI model is the control machine for a six-floor building. Every tick it answe
 You watch, and afterwards you can compare the model's shift against a greedy controller that runs the same passenger script locally. Riders, capacity, travel and the shift clock are all resolved in code, so the model only makes the control decision.
 
 - **Live:** https://marcus-mok-gh.github.io/the-lift/
+
+![The Lift: the building, the control desk and the shift log](docs/screenshot.png)
 - **Quest:** [#19179](https://github.com/pollinations/pollinations/issues/19179)
 
 ## Bring your own Pollen
