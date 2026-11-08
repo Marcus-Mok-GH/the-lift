@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Lift — a small model runs the building</title>
+<meta name="description" content="A lift controller played by an AI model: it decides every move, and you watch whether the building runs well.">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --card: #10161f;
+    --line: #1e2733;
+    --text: #e8eef6;
+    --dim: #93a3b8;
+    --accent: #7fd1ae;
+    --warn: #f0b862;
+    --bad: #e98b83;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(1100px 600px at 12% -12%, #142030 0%, var(--bg) 55%);
+    color: var(--text);
+    font: 15.5px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 22px 18px 40px; }
+  header.top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand h1 { font-size: 21px; margin: 0; letter-spacing: -.02em; }
+  .brand .sub { color: var(--dim); font-size: 12.5px; }
+  .connect-slot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .pill { border: 1px solid var(--line); background: var(--card); color: var(--dim); border-radius: 999px; padding: 7px 12px; font-size: 12.5px; min-height: 40px; display: inline-flex; align-items: center; }
+  .pill.ok { color: var(--accent); border-color: #2c4a3d; }
+  .grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  @media (min-width: 900px) { .grid { grid-template-columns: 340px 1fr; align-items: start; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 15px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--dim); margin: 0 0 12px; }
+  label.field { display: block; font-size: 12.5px; color: var(--dim); margin: 12px 0 6px; }
+  select, input[type=number] {
+    width: 100%; background: #0c121a; color: var(--text); border: 1px solid var(--line);
+    border-radius: 11px; padding: 11px 12px; font-size: 15px; min-height: 46px;
+  }
+  button {
+    font: inherit; cursor: pointer; border-radius: 12px; border: 1px solid var(--line);
+    background: #16202c; color: var(--text); padding: 12px 14px; min-height: 46px;
+  }
+  button:hover { border-color: #2f4053; }
+  button.primary { background: linear-gradient(180deg, #7fd1ae, #4fae8a); color: #06120d; border: none; font-weight: 650; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #7fb6ff; outline-offset: 2px; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .actions button { flex: 1 1 130px; }
+  .notice { border: 1px solid #4a3718; background: rgba(240,184,98,.08); color: #f3e2c0; border-radius: 12px; padding: 10px 12px; font-size: 13.5px; margin-top: 12px; }
+  .notice.err { border-color: #5a2626; background: rgba(233,139,131,.09); color: #f6cbc6; }
+  .notice.hide { display: none; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .stat { background: #0d141d; border: 1px solid var(--line); border-radius: 12px; padding: 9px 10px; }
+  .stat .k { font-size: 11.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); }
+  .stat .v { font-size: 18px; font-weight: 650; margin-top: 2px; }
+  footer { margin-top: 20px; color: var(--dim); font-size: 12.5px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  footer a { color: #9fc6ff; text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div>
+        <h1>The Lift</h1>
+        <div class="sub">An AI model is the control machine. It decides every move; the building keeps score.</div>
+      </div>
+    </div>
+    <div class="connect-slot">
+      <span id="balance" class="pill">No Pollen connected</span>
+      <span id="connect"></span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Control desk</h2>
+      <label class="field" for="model">The machine's mind</label>
+      <select id="model"></select>
+      <label class="field" for="floors">Passengers per shift</label>
+      <input id="floors" type="number" min="3" max="12" value="5" inputmode="numeric">
+      <div class="actions">
+        <button id="run" class="primary">Run a shift</button>
+        <button id="step" disabled>One tick</button>
+      </div>
+      <div id="notice" class="notice hide" role="status"></div>
+      <div class="stats">
+        <div class="stat"><div class="k">Delivered</div><div class="v" id="s-delivered">0</div></div>
+        <div class="stat"><div class="k">Avg wait</div><div class="v" id="s-wait">–</div></div>
+        <div class="stat"><div class="k">Tick</div><div class="v" id="s-tick">0</div></div>
+      </div>
+      <div class="stats" style="grid-template-columns:1fr 1fr;">
+        <div class="stat"><div class="k">Greedy machine</div><div class="v" id="s-base">–</div></div>
+        <div class="stat"><div class="k">Best of</div><div class="v" id="s-runs">0</div></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>The building</h2>
+      <div id="floors-wrap" class="lift"></div>
+      <div id="log" class="log" aria-live="polite"></div>
+    </section>
+  </div>
+
+  <footer>
+    <a href="https://pollinations.ai" target="_blank" rel="noopener">Pollinations</a>
+    <a href="https://gen.pollinations.ai/docs" target="_blank" rel="noopener">API docs</a>
+    <a href="https://enter.pollinations.ai/quests" target="_blank" rel="noopener">Pollen quests</a>
+    <a href="https://github.com/Marcus-Mok-GH/the-lift" target="_blank" rel="noopener">Source</a>
+    <a href="https://github.com/pollinations/pollinations/issues/19179" target="_blank" rel="noopener">Quest #19179</a>
+  </footer>
+</div>
+
+<style>
+  .lift { display: grid; gap: 6px; }
+  .fl { display: grid; grid-template-columns: 34px 1fr; gap: 8px; align-items: stretch; }
+  .fl .num { color: var(--dim); font-size: 12.5px; display: flex; align-items: center; justify-content: center; }
+  .fl .deck {
+    border: 1px solid var(--line); border-radius: 11px; padding: 8px 10px; min-height: 52px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #0d141d;
+  }
+  .fl.here .deck { border-color: #35624f; background: #10201a; }
+  .pax { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px; font-size: 12.5px; color: var(--text); background: #121b26; }
+  .pax b { color: var(--accent); font-weight: 650; }
+  .car { border: 1px solid #35624f; background: rgba(127,209,174,.1); border-radius: 10px; padding: 6px 10px; font-size: 12.5px; color: var(--accent); }
+  .empty { color: var(--dim); font-size: 12.5px; }
+  .log { margin-top: 14px; display: grid; gap: 7px; max-height: 340px; overflow: auto; }
+  .row { display: grid; grid-template-columns: 54px 1fr; gap: 9px; align-items: baseline; font-size: 13.5px; border-bottom: 1px solid #17202b; padding-bottom: 6px; }
+  .row .t { color: var(--dim); font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; }
+  .row .a { color: var(--text); }
+  .row .c { color: var(--dim); font-size: 12.5px; }
+  .row.bad .a { color: var(--bad); }
+  @media (max-width: 640px) {
+    .fl { grid-template-columns: 26px 1fr; }
+    .log { max-height: none; }
+  }
+</style>
+<script defer src="https://cdn.jsdelivr.net/npm/@pollinations/ui@0.1.0-alpha.20/dist/connect.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // Publishable App Key from enter.pollinations.ai -> Keys -> Apps.
+  // This page's URL must be one of that key's Redirect URIs.
+  var APP_KEY = "";
+
+  var API = "https://gen.pollinations.ai";
+  var FLOORS = 6;
+  var CAPACITY = 3;
+  var MAX_TICKS = 24;
+  var KEYS = ["up", "down", "open", "hold"];
+
+  var state = {
+    apiKey: "",
+    model: "",
+    tick: 0,
+    car: 1,
+    inside: [],
+    waiting: {},
+    delivered: 0,
+    waitSum: 0,
+    arrivals: [],
+    log: [],
+    over: false,
+    runs: 0,
+    best: null
+  };
+
+  function $(id) { return document.getElementById(id); }
+
+  function rng(seed) {
+    var s = seed >>> 0;
+    return function () {
+      s = (s + 0x6d2b79f5) >>> 0;
+      var t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function notice(text, isErr) {
+    var n = $("notice");
+    if (!text) { n.className = "notice hide"; n.textContent = ""; return; }
+    n.textContent = text;
+    n.className = "notice" + (isErr ? " err" : "");
+  }
+
+  function buildArrivals(count, seed) {
+    var r = rng(seed);
+    var list = [];
+    for (var i = 0; i < count; i++) {
+      var from = 1 + Math.floor(r() * FLOORS);
+      var to = 1 + Math.floor(r() * (FLOORS - 1));
+      if (to >= from) to += 1;
+      list.push({ from: from, to: to, at: 1 + Math.floor(r() * 5) });
+    }
+    return list;
+  }
+
+  // Pure resolver: one tick of the building, given the machine's action.
+  function applyTick(sim, action) {
+    var boarded = 0, dropped = 0, moved = 0, invalid = false;
+
+    if (action === "open") {
+      sim.inside = sim.inside.filter(function (d) {
+        if (d.to === sim.car) { dropped++; sim.delivered++; sim.waitSum += sim.tick - d.arriveTick; return false; }
+        return true;
+      });
+      var queue = sim.waiting[sim.car] || [];
+      var kept = [];
+      queue.forEach(function (p) {
+        if (sim.inside.length < CAPACITY) { sim.inside.push({ to: p.to, arriveTick: p.arriveTick }); boarded++; }
+        else kept.push(p);
+      });
+      sim.waiting[sim.car] = kept;
+    } else if (action === "up" || action === "down") {
+      var next = sim.car + (action === "up" ? 1 : -1);
+      if (next < 1 || next > FLOORS) invalid = true;
+      else { sim.car = next; moved = 1; }
+    }
+
+    sim.tick += 1;
+    (sim.arrivals || []).forEach(function (a) {
+      if (a.at === sim.tick) {
+        (sim.waiting[a.from] = sim.waiting[a.from] || []).push({ to: a.to, arriveTick: sim.tick });
+      }
+    });
+    return { boarded: boarded, dropped: dropped, moved: moved, invalid: invalid };
+  }
+
+  function greedyAction(sim) {
+    var space = sim.inside.length < CAPACITY;
+    var boardHere = (sim.waiting[sim.car] || []).length > 0 && space;
+    var dropHere = sim.inside.some(function (p) { return p.to === sim.car; });
+    if (boardHere || dropHere) return "open";
+    var targets = Object.keys(sim.waiting)
+      .filter(function (f) { return sim.waiting[f].length; })
+      .map(Number)
+      .concat(sim.inside.map(function (p) { return p.to; }));
+    targets = targets.filter(function (f) { return f !== sim.car; });
+    if (!targets.length) return "hold";
+    targets.sort(function (a, b) { return Math.abs(a - sim.car) - Math.abs(b - sim.car); });
+    return targets[0] > sim.car ? "up" : "down";
+  }
+
+  function runGreedy(arrivals) {
+    var sim = { tick: 0, car: 1, inside: [], waiting: {}, delivered: 0, waitSum: 0, arrivals: arrivals };
+    while (sim.tick < MAX_TICKS) applyTick(sim, greedyAction(sim));
+    var avg = sim.delivered ? (sim.waitSum / sim.delivered) : null;
+    return { delivered: sim.delivered, avg: avg };
+  }
+
+  function freshRun(seed) {
+    state.tick = 0;
+    state.car = 1;
+    state.inside = [];
+    state.waiting = {};
+    state.delivered = 0;
+    state.waitSum = 0;
+    state.log = [];
+    state.over = false;
+    var count = Math.max(3, Math.min(12, Number($("floors").value) || 5));
+    state.arrivals = buildArrivals(count, seed);
+    state.arrivals.forEach(function (a, i) { a.id = i; });
+  }
+
+  function describe() {
+    var waiting = [];
+    for (var f = FLOORS; f >= 1; f--) {
+      var q = state.waiting[f] || [];
+      if (q.length) waiting.push("floor " + f + ": " + q.map(function (p) { return "->" + p.to; }).join(", "));
+    }
+    return [
+      "Tick " + state.tick + " of " + MAX_TICKS + ".",
+      "The lift car is on floor " + state.car + " (floors are 1 to " + FLOORS + ").",
+      "Passengers inside, with their destination floors: " +
+        (state.inside.length ? state.inside.map(function (p) { return p.to; }).join(", ") : "none") +
+        ". Capacity is " + CAPACITY + ".",
+      "Passengers waiting: " + (waiting.length ? waiting.join("; ") : "none") + ".",
+      "Delivered so far: " + state.delivered + "."
+    ].join("\n");
+  }
+
+  async function decide() {
+    var body = {
+      model: state.model || "jev",
+      state: describe(),
+      questions: {
+        action: {
+          type: "choice",
+          instructions: "You are the lift control machine for this building. What do you do this tick?",
+          criteria: {
+            up: "Move the car one floor up",
+            down: "Move the car one floor down",
+            open: "Open the doors here: deliver riders whose floor this is, and let waiting people board",
+            hold: "Do nothing this tick"
+          }
+        }
+      }
+    };
+    var res = await fetch(API + "/alpha/decisions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + state.apiKey },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      var msg = "The machine could not answer (HTTP " + res.status + ").";
+      if (res.status === 401) msg = "Connect your Pollen first, then run a shift.";
+      if (res.status === 402) msg = "Out of Pollen for this run. Top up and try again.";
+      throw new Error(msg);
+    }
+    var data = await res.json();
+    var ans = (data.answers && data.answers.action) || {};
+    var choice = String(ans.choice || "hold").toLowerCase();
+    if (KEYS.indexOf(choice) === -1) choice = "hold";
+    return { action: choice, confidence: ans.confidence, probabilities: ans.probabilities };
+  }
+  
+  function render() {
+    var wrap = $("floors-wrap");
+    wrap.innerHTML = "";
+    for (var f = FLOORS; f >= 1; f--) {
+      var row = document.createElement("div");
+      row.className = "fl" + (f === state.car ? " here" : "");
+      var num = document.createElement("div");
+      num.className = "num";
+      num.textContent = f;
+      var deck = document.createElement("div");
+      deck.className = "deck";
+      if (f === state.car) {
+        var car = document.createElement("span");
+        car.className = "car";
+        car.textContent = "car · " + state.inside.length + "/" + CAPACITY +
+          (state.inside.length ? " → " + state.inside.map(function (p) { return p.to; }).join(" ") : "");
+        deck.appendChild(car);
+      }
+      var q = state.waiting[f] || [];
+      q.forEach(function (p) {
+        var el = document.createElement("span");
+        el.className = "pax";
+        el.innerHTML = "waiting <b>→ " + p.to + "</b>";
+        deck.appendChild(el);
+      });
+      if (!q.length && f !== state.car) {
+        var e = document.createElement("span");
+        e.className = "empty";
+        e.textContent = "—";
+        deck.appendChild(e);
+      }
+      row.appendChild(num);
+      row.appendChild(deck);
+      wrap.appendChild(row);
+    }
+
+    $("s-delivered").textContent = String(state.delivered);
+    $("s-wait").textContent = state.delivered ? (state.waitSum / state.delivered).toFixed(1) : "–";
+    $("s-tick").textContent = String(state.tick);
+
+    var log = $("log");
+    log.innerHTML = "";
+    state.log.slice().reverse().forEach(function (entry) {
+      var row = document.createElement("div");
+      row.className = "row" + (entry.bad ? " bad" : "");
+      var t = document.createElement("div");
+      t.className = "t";
+      t.textContent = "t" + entry.tick;
+      var a = document.createElement("div");
+      a.className = "a";
+      a.innerHTML = "<b>" + entry.action + "</b> <span class=\"c\">" + entry.note + "</span>";
+      row.appendChild(t);
+      row.appendChild(a);
+      log.appendChild(row);
+    });
+  }
+
+  var busy = false;
+
+  async function tick() {
+    if (state.over || busy) return;
+    busy = true;
+    try { await tickInner(); } finally { busy = false; }
+  }
+
+  async function tickInner() {
+    if (state.over) return;
+    if (!state.apiKey) { notice("Connect your Pollen first: the machine is a model, and models bill the visitor.", true); return; }
+    notice("");
+    var decided;
+    try {
+      decided = await decide();
+    } catch (err) {
+      notice(err.message || "The machine failed to answer.", true);
+      return;
+    }
+    var result = applyTick(state, decided.action);
+    var note = [];
+    if (result.invalid) note.push("hit a wall");
+    if (result.dropped) note.push(result.dropped + " out");
+    if (result.boarded) note.push(result.boarded + " in");
+    if (result.moved) note.push("moved");
+    if (decided.confidence) note.push(Math.round(decided.confidence * 100) + "% sure");
+    state.log.push({ tick: state.tick - 1, action: decided.action, note: note.join(" · ") || "no change", bad: result.invalid });
+    render();
+    if (state.tick >= MAX_TICKS) finish();
+  }
+
+  function finish() {
+    state.over = true;
+    $("step").disabled = true;
+    var avg = state.delivered ? (state.waitSum / state.delivered).toFixed(1) : "–";
+    notice("Shift over. Delivered " + state.delivered + " with an average wait of " + avg + " ticks.");
+    state.runs += 1;
+    $("s-runs").textContent = String(state.runs);
+    var base = runGreedy(state.arrivals);
+    $("s-base").textContent = base.delivered + " / " + (base.avg === null ? "–" : base.avg.toFixed(1));
+    if (base.delivered > state.delivered) {
+      notice("Shift over. Delivered " + state.delivered + " (avg wait " + avg + "). The greedy machine managed " + base.delivered + ".", true);
+    }
+  }
+
+  async function loadModels() {
+    var out = $("model");
+    try {
+      var res = await fetch(API + "/models");
+      var list = await res.json();
+      var items = Array.isArray(list) ? list : (list.data || list.models || []);
+      var decision = items.filter(function (m) { return String(m.category || "").toLowerCase() === "decision"; });
+      out.innerHTML = "";
+      (decision.length ? decision : items.slice(0, 12)).forEach(function (m) {
+        var opt = document.createElement("option");
+        opt.value = m.name;
+        opt.textContent = m.title || m.name;
+        out.appendChild(opt);
+      });
+      state.model = out.value;
+    } catch (e) {
+      out.innerHTML = "<option value=\"jev\">Jev</option>";
+      state.model = "jev";
+    }
+  }
+
+  function mountConnect() {
+    var slot = $("connect");
+    slot.innerHTML = "";
+    if (!APP_KEY) {
+      var hint = document.createElement("span");
+      hint.className = "pill";
+      hint.textContent = "App key not configured";
+      slot.appendChild(hint);
+      return;
+    }
+    var widget = document.createElement("polli-connect");
+    widget.setAttribute("app-key", APP_KEY);
+    widget.setAttribute("budget", "10");
+    widget.setAttribute("expiry", "7");
+    widget.setAttribute("models", "decision");
+    widget.addEventListener("change", function () {
+      state.apiKey = widget.apiKey || "";
+      var pill = $("balance");
+      if (state.apiKey) {
+        pill.className = "pill ok";
+        pill.textContent = "Pollen connected";
+        $("run").disabled = false;
+      }
+    });
+    slot.appendChild(widget);
+  }
+
+  $("model").addEventListener("change", function (e) { state.model = e.target.value; });
+
+  $("run").addEventListener("click", async function () {
+    if (!state.apiKey) { notice("Connect your Pollen first, then the machine can run the building.", true); return; }
+    freshRun(Math.floor(Math.random() * 1e9));
+    $("step").disabled = false;
+    render();
+    await tick();
+  });
+
+  $("step").addEventListener("click", tick);
+
+  mountConnect();
+  loadModels();
+  render();
+})();
+</script>
+</body>
+</html>
